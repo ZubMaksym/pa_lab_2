@@ -1,6 +1,7 @@
+'strict mode'
 // color_solver.js
-// Node.js implementation for COLOR task: Backtracking (AS IS) and Beam search.
-// Usage: node color_solver.js --nodes=20 --runs=20 --beamK=10
+// Node.js implementation for COLOR task: Backtracking and Beam search.
+// Usage: node colorSolver.js --nodes=20 --runs=20 --beamK=10
 
 const os = require('os');
 const { argv } = require('process');
@@ -21,12 +22,8 @@ const TIME_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
 const MEM_LIMIT_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
 
 // --- Utility random ---
-function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
-function shuffle(arr) {
-    for (let i = arr.length - 1; i > 0; --i) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
+function randInt(a, b) {
+    return Math.floor(Math.random() * (b - a + 1)) + a; 
 }
 
 // --- Map (graph) generator: connected random graph with target average degree ~3-4 ---
@@ -49,7 +46,9 @@ function generateMap(n, extraEdgeProb = 0.12) {
     return adj.map(s => Array.from(s));
 }
 
-function degrees(adj) { return adj.map(nei => nei.length); }
+function degrees(adj) { 
+    return adj.map(nei => nei.length); 
+}
 
 // --- Heuristics ---
 // DGR (задана): вага конфлікту = deg(u) + deg(v)
@@ -83,8 +82,7 @@ function heuristicMY(assign, adj) {
     return conflicts + penalty;
 }
 
-// --- Backtracking (BCTR) AS IS ---
-// Plain sequential variable order; colors tried 0..C-1; no MRV, no forward-checking
+// --- Backtracking (BCTR) ---
 function solveBacktrackingWithHeuristic(adj, colors = COLORS, heuristic = 'DGR', timeLimit = TIME_LIMIT_MS, memLimit = MEM_LIMIT_BYTES) {
     const n = adj.length;
     const assign = new Array(n).fill(-1);
@@ -244,9 +242,7 @@ function beamSearch(adj, k = BEAM_K, colors = COLORS, heuristicName = 'DGR', max
     return { found: false, assign: null, generatedStates: generated, steps: iter, beamSize: k, timeMs: Date.now() - start, stopped };
 }
 
-// --- Experiment runner ---
 function singleExperiment(mapAdj, alg, options = {}) {
-    // alg = 'BCTR' or 'BEAM'
     if (alg === 'BCTR') {
         return solveBacktrackingWithHeuristic(mapAdj, options.colors || COLORS, options.heuristic || 'DGR', options.timeLimit || TIME_LIMIT_MS, options.memLimit || MEM_LIMIT_BYTES);
     }
@@ -259,9 +255,9 @@ function singleExperiment(mapAdj, alg, options = {}) {
 
 function runSeries(alg, mapGenerator, runs = RUNS, opts = {}) {
     const results = [];
+    let mapAdj = opts.fixedMap ? opts.fixedMap : mapGenerator(); // 🟢 якщо передали готову мапу – використовуємо її
+
     for (let i = 0; i < runs; ++i) {
-        const mapAdj = mapGenerator();
-        // different initial state: for backtracking initial state is empty (same), but map differs
         const res = singleExperiment(mapAdj, alg, opts);
         results.push({ mapAdj, res });
         if (res.stopped) {
@@ -303,47 +299,45 @@ function summarizeResults(resList) {
 // --- Main execution ---
 async function main() {
     console.log('COLOR solver. Nodes:', NODES, 'Runs:', RUNS, 'Colors:', COLORS, 'BeamK:', BEAM_K);
-    const mapGen = () => generateMap(NODES, 0.12);
+    const sharedMap = generateMap(NODES, 0.12); // 🟢 один і той самий граф
+
+    const ENABLE = {
+        BCTR_DGR: true,
+        BCTR_MY: true,
+        BEAM_DGR: true,
+        BEAM_MY: true
+    };
 
     let bctrDGRResults = [];
     let bctrMYResults = [];
     let beamDGRResults = [];
     let beamMYResults = [];
-    // ----------------------------
-    // 1️⃣ Backtracking (BCTR) + DGR
-    // ----------------------------
-    // Якщо не потрібен, можна закоментувати
-    // console.log('\nRunning Backtracking (BCTR) with DGR');
-    // bctrDGRResults = runSeries('BCTR', mapGen, RUNS, { heuristic: 'DGR' });
-    // console.log('BCTR (DGR) summary:', summarizeResults(bctrDGRResults));
 
-    // ----------------------------
-    // 2️⃣ Backtracking (BCTR) + MY
-    // ----------------------------
-    // Якщо не потрібен, можна закоментувати
-    // console.log('\nRunning Backtracking (BCTR) with MY');
-    // bctrMYResults = runSeries('BCTR', mapGen, RUNS, { heuristic: 'MY' });
-    // console.log('BCTR (MY) summary:', summarizeResults(bctrMYResults));
+    if (ENABLE.BCTR_DGR) {
+        console.log('\nRunning Backtracking (BCTR) with DGR');
+        bctrDGRResults = runSeries('BCTR', generateMap, RUNS, { heuristic: 'DGR', fixedMap: sharedMap });
+        console.log('BCTR (DGR) summary:', summarizeResults(bctrDGRResults));
+    }
 
-    // ----------------------------
-    // 3️⃣ Beam search (BEAM) + DGR
-    // ----------------------------
-    // Якщо не потрібен, можна закоментувати
-    // console.log('\nRunning Beam search (BEAM) with DGR');
-    // beamDGRResults = runSeries('BEAM', mapGen, RUNS, { heuristic: 'DGR', k: BEAM_K, maxIter: MAX_ITER_BEAM });
-    // console.log('BEAM (DGR) summary:', summarizeResults(beamDGRResults));
+    if (ENABLE.BCTR_MY) {
+        console.log('\nRunning Backtracking (BCTR) with MY');
+        bctrMYResults = runSeries('BCTR', generateMap, RUNS, { heuristic: 'MY', fixedMap: sharedMap });
+        console.log('BCTR (MY) summary:', summarizeResults(bctrMYResults));
+    }
 
-    // ----------------------------
-    // 4️⃣ Beam search (BEAM) + MY
-    // ----------------------------
-    // Якщо не потрібен, можна закоментувати
-    console.log('\nRunning Beam search (BEAM) with MY');
-    beamMYResults = runSeries('BEAM', mapGen, RUNS, { heuristic: 'MY', k: BEAM_K, maxIter: MAX_ITER_BEAM });
-    console.log('BEAM (MY) summary:', summarizeResults(beamMYResults));
+    if (ENABLE.BEAM_DGR) {
+        console.log('\nRunning Beam search (BEAM) with DGR');
+        beamDGRResults = runSeries('BEAM', generateMap, RUNS, { heuristic: 'DGR', k: BEAM_K, maxIter: MAX_ITER_BEAM, fixedMap: sharedMap });
+        console.log('BEAM (DGR) summary:', summarizeResults(beamDGRResults));
+    }
 
-    // ----------------------------
-    // Приклад вирішення та DOT-файл
-    // ----------------------------
+    if (ENABLE.BEAM_MY) {
+        console.log('\nRunning Beam search (BEAM) with MY');
+        beamMYResults = runSeries('BEAM', generateMap, RUNS, { heuristic: 'MY', k: BEAM_K, maxIter: MAX_ITER_BEAM, fixedMap: sharedMap });
+        console.log('BEAM (MY) summary:', summarizeResults(beamMYResults));
+    }
+
+    // DOT-file
     const allResults = [bctrDGRResults, bctrMYResults, beamDGRResults, beamMYResults].flat();
     const sample = allResults.find(x => x.res.found);
     if (sample) {
