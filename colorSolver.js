@@ -1,5 +1,4 @@
-'strict mode'
-// color_solver.js
+'use strict'
 // Node.js implementation for COLOR task: Backtracking and Beam search.
 // Usage: node colorSolver.js --nodes=20 --runs=20 --beamK=10
 
@@ -21,20 +20,19 @@ const COLORS = parseInt(args.colors || 4, 10);
 const TIME_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
 const MEM_LIMIT_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
 
-// --- Utility random ---
 function randInt(a, b) {
-    return Math.floor(Math.random() * (b - a + 1)) + a; 
+    return Math.floor(Math.random() * (b - a + 1)) + a;
 }
 
-// --- Map (graph) generator: connected random graph with target average degree ~3-4 ---
+// graph with target average degree ~3-4
 function generateMap(n, extraEdgeProb = 0.12) {
     const adj = Array.from({ length: n }, () => new Set());
-    // ensure connectivity with random spanning tree
+
     for (let v = 1; v < n; ++v) {
         const u = randInt(0, v - 1);
         adj[u].add(v); adj[v].add(u);
     }
-    // add random edges
+
     for (let u = 0; u < n; ++u) {
         for (let v = u + 1; v < n; ++v) {
             if (Math.random() < extraEdgeProb) {
@@ -42,16 +40,13 @@ function generateMap(n, extraEdgeProb = 0.12) {
             }
         }
     }
-    // convert to arrays
     return adj.map(s => Array.from(s));
 }
 
-function degrees(adj) { 
-    return adj.map(nei => nei.length); 
+function degrees(adj) {
+    return adj.map(nei => nei.length);
 }
 
-// --- Heuristics ---
-// DGR (задана): вага конфлікту = deg(u) + deg(v)
 function heuristicDGR(assign, adj) {
     let score = 0;
     const deg = degrees(adj);
@@ -60,10 +55,9 @@ function heuristicDGR(assign, adj) {
             if (v > u && assign[u] === assign[v]) score += (deg[u] + deg[v]);
         }
     }
-    return score; // lower is better; 0 = solution
+    return score;
 }
 
-// MY heuristic (власна): number of conflicting pairs + extra penalty for nodes with multiple conflicts
 function heuristicMY(assign, adj) {
     let conflicts = 0;
     const conflictCountPerNode = new Array(adj.length).fill(0);
@@ -77,7 +71,7 @@ function heuristicMY(assign, adj) {
     }
     let penalty = 0;
     for (const c of conflictCountPerNode) {
-        if (c > 1) penalty += (c - 1) * 0.5; // small penalty
+        if (c > 1) penalty += (c - 1) * 0.5;
     }
     return conflicts + penalty;
 }
@@ -99,14 +93,15 @@ function solveBacktrackingWithHeuristic(adj, colors = COLORS, heuristic = 'DGR',
     }
 
     function validAssign(v, c) {
-        for (const u of adj[v]) if (assign[u] === c) return false;
+        for (const u of adj[v]) {
+            if (assign[u] === c) return false;
+        }
         return true;
     }
 
-    // --- Обчислюємо «оцінку» вершини для вибору наступної ---
     function vertexScore(v) {
         const deg = adj[v].length;
-        if (heuristic === 'DGR') return deg; // просто степінь
+        if (heuristic === 'DGR') return deg;
         if (heuristic === 'MY') {
             let conflicts = 0;
             for (const u of adj[v]) if (assign[u] !== -1 && assign[u] === assign[v]) conflicts++;
@@ -228,18 +223,26 @@ function beamSearch(adj, k = BEAM_K, colors = COLORS, heuristicName = 'DGR', max
             }
             i++;
         }
-        // if no new beams (all duplicates), re-seed randomly (random restart)
-        if (newBeams.length === 0) {
-            for (let r = 0; r < k; ++r) {
-                const s = Array.from({ length: n }, () => randInt(0, colors - 1));
-                newBeams.push({ s, score: evalState(s) });
-            }
-        }
+        // if no new beams (all duplicates), re-seed randomly (random restart) LOCAL MIN
+        // if (newBeams.length === 0) {
+        //     for (let r = 0; r < k; ++r) {
+        //         const s = Array.from({ length: n }, () => randInt(0, colors - 1));
+        //         newBeams.push({ s, score: evalState(s) });
+        //     }
+        // }
         beams.length = 0; beams.push(...newBeams);
         // simple stagnation detection removed for simplicity; iterations continue until maxIter or solution
     }
 
-    return { found: false, assign: null, generatedStates: generated, steps: iter, beamSize: k, timeMs: Date.now() - start, stopped };
+    return {
+        found: false,
+        assign: null,
+        generatedStates: generated,
+        steps: iter,
+        beamSize: k,
+        timeMs: Date.now() - start,
+        stopped
+    };
 }
 
 function singleExperiment(mapAdj, alg, options = {}) {
