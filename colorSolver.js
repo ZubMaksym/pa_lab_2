@@ -1,5 +1,4 @@
 'use strict'
-// Node.js implementation for COLOR task: Backtracking and Beam search.
 // Usage: node colorSolver.js --nodes=20 --runs=20 --beamK=10
 
 const os = require('os');
@@ -17,14 +16,13 @@ const BEAM_K = parseInt(args.beamK || 10, 10);
 const MAX_ITER_BEAM = parseInt(args.maxIterBeam || 5000, 10);
 const COLORS = parseInt(args.colors || 4, 10);
 
-const TIME_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
+const TIME_LIMIT_MS = 30 * 60 * 1000; // 30 min
 const MEM_LIMIT_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
 
 function randInt(a, b) {
     return Math.floor(Math.random() * (b - a + 1)) + a;
 }
 
-// graph with target average degree ~3-4
 function generateMap(n, extraEdgeProb = 0.12) {
     const adj = Array.from({ length: n }, () => new Set());
 
@@ -76,7 +74,6 @@ function heuristicMY(assign, adj) {
     return conflicts + penalty;
 }
 
-// --- Backtracking (BCTR) ---
 function solveBacktrackingWithHeuristic(adj, colors = COLORS, heuristic = 'DGR', timeLimit = TIME_LIMIT_MS, memLimit = MEM_LIMIT_BYTES) {
     const n = adj.length;
     const assign = new Array(n).fill(-1);
@@ -114,7 +111,7 @@ function solveBacktrackingWithHeuristic(adj, colors = COLORS, heuristic = 'DGR',
         let candidates = [];
         for (let v = 0; v < n; ++v) if (assign[v] === -1) candidates.push(v);
         if (candidates.length === 0) return -1;
-        candidates.sort((a, b) => vertexScore(b) - vertexScore(a)); // вершина з максимальною оцінкою першою
+        candidates.sort((a, b) => vertexScore(b) - vertexScore(a));
         return candidates[0];
     }
 
@@ -124,7 +121,7 @@ function solveBacktrackingWithHeuristic(adj, colors = COLORS, heuristic = 'DGR',
     function backtrack() {
         if (stopped) return false;
         const v = selectNextVertex();
-        if (v === -1) { found = true; return true; } // всі вершини пофарбовані
+        if (v === -1) { found = true; return true; }
         maxStack = Math.max(maxStack, n - assign.filter(x => x === -1).length + 1);
         steps++;
 
@@ -155,12 +152,11 @@ function solveBacktrackingWithHeuristic(adj, colors = COLORS, heuristic = 'DGR',
     };
 }
 
-// --- Beam search (local search) ---
-// Represent state as array assign[0..n-1] with values in 0..colors-1
-function beamSearch(adj, k = BEAM_K, colors = COLORS, heuristicName = 'DGR', maxIter = MAX_ITER_BEAM, timeLimit = TIME_LIMIT_MS, memLimit = MEM_LIMIT_BYTES) {
+function beamSearch(adj, k = BEAM_K, colors = COLORS, heuristicName = 'DGR', maxIter = MAX_ITER_BEAM, timeLimit = TIME_LIMIT_MS, memLimit = MEM_LIMIT_BYTES, opts = {}) {
     const n = adj.length;
     const start = Date.now();
     let stopped = false;
+
     function checkLimits() {
         if (Date.now() - start > timeLimit) { stopped = true; return true; }
         const mem = process.memoryUsage().heapUsed;
@@ -173,31 +169,28 @@ function beamSearch(adj, k = BEAM_K, colors = COLORS, heuristicName = 'DGR', max
         return heuristicMY(s, adj);
     }
 
-    // generate random initial beams
-    const beams = [];
-    for (let i = 0; i < k; ++i) {
-        const s = Array.from({ length: n }, () => randInt(0, colors - 1));
-        beams.push({ s, score: evalState(s) });
-    }
+    // === Змінено: тільки одне початкове розфарбування ===
+    const initialState = opts.initialColoring || Array.from({ length: n }, () => randInt(0, colors - 1));
+    const beams = [{ s: initialState.slice(), score: evalState(initialState) }];
 
     let generated = 0;
     let iter = 0;
-    const seenHashes = new Set(); // to avoid duplicates in beam
+    const seenHashes = new Set();
     function hashState(s) { return s.join(','); }
 
     while (iter < maxIter) {
         if (checkLimits()) break;
         iter++;
-        // check for solution
+
+        // Перевірка, чи знайдено рішення
         for (const b of beams) if (b.score === 0) {
             return { found: true, assign: b.s.slice(), generatedStates: generated, steps: iter, beamSize: beams.length, timeMs: Date.now() - start, stopped: false };
         }
 
-        // generate neighbors
         const neighbors = [];
+        // Для всіх станів в beam генеруємо сусідів
         for (const b of beams) {
             const s = b.s;
-            // generate neighbors by changing color of one vertex
             for (let v = 0; v < n; ++v) {
                 const original = s[v];
                 for (let c = 0; c < colors; ++c) {
@@ -205,13 +198,13 @@ function beamSearch(adj, k = BEAM_K, colors = COLORS, heuristicName = 'DGR', max
                     const ns = s.slice();
                     ns[v] = c;
                     generated++;
-                    const h = evalState(ns);
-                    neighbors.push({ s: ns, score: h });
+                    neighbors.push({ s: ns, score: evalState(ns) });
                 }
             }
         }
+
         if (neighbors.length === 0) break;
-        // keep top-k by score (lowest)
+
         neighbors.sort((a, b) => a.score - b.score);
         const newBeams = [];
         let i = 0;
@@ -223,15 +216,10 @@ function beamSearch(adj, k = BEAM_K, colors = COLORS, heuristicName = 'DGR', max
             }
             i++;
         }
-        // if no new beams (all duplicates), re-seed randomly (random restart) LOCAL MIN
-        // if (newBeams.length === 0) {
-        //     for (let r = 0; r < k; ++r) {
-        //         const s = Array.from({ length: n }, () => randInt(0, colors - 1));
-        //         newBeams.push({ s, score: evalState(s) });
-        //     }
-        // }
-        beams.length = 0; beams.push(...newBeams);
-        // simple stagnation detection removed for simplicity; iterations continue until maxIter or solution
+
+        // Замінюємо старі beam на нові
+        beams.length = 0;
+        beams.push(...newBeams);
     }
 
     return {
@@ -250,7 +238,7 @@ function singleExperiment(mapAdj, alg, options = {}) {
         return solveBacktrackingWithHeuristic(mapAdj, options.colors || COLORS, options.heuristic || 'DGR', options.timeLimit || TIME_LIMIT_MS, options.memLimit || MEM_LIMIT_BYTES);
     }
     else if (alg === 'BEAM') {
-        return beamSearch(mapAdj, options.k || BEAM_K, options.colors || COLORS, options.heuristic || 'DGR', options.maxIter || MAX_ITER_BEAM, options.timeLimit || TIME_LIMIT_MS, options.memLimit || MEM_LIMIT_BYTES);
+        return beamSearch(mapAdj, options.k || BEAM_K, options.colors || COLORS, options.heuristic || 'DGR', options.maxIter || MAX_ITER_BEAM, options.timeLimit || TIME_LIMIT_MS, options.memLimit || MEM_LIMIT_BYTES, options);
     } else {
         throw new Error('Unknown alg');
     }
@@ -258,7 +246,7 @@ function singleExperiment(mapAdj, alg, options = {}) {
 
 function runSeries(alg, mapGenerator, runs = RUNS, opts = {}) {
     const results = [];
-    let mapAdj = opts.fixedMap ? opts.fixedMap : mapGenerator(); // 🟢 якщо передали готову мапу – використовуємо її
+    let mapAdj = opts.fixedMap ? opts.fixedMap : mapGenerator();
 
     for (let i = 0; i < runs; ++i) {
         const res = singleExperiment(mapAdj, alg, opts);
@@ -299,10 +287,12 @@ function summarizeResults(resList) {
     };
 }
 
-// --- Main execution ---
+
 async function main() {
     console.log('COLOR solver. Nodes:', NODES, 'Runs:', RUNS, 'Colors:', COLORS, 'BeamK:', BEAM_K);
-    const sharedMap = generateMap(NODES, 0.12); // 🟢 один і той самий граф
+    const sharedMap = generateMap(NODES, 0.12);
+    const initialColoring = Array.from({ length: NODES }, () => randInt(0, COLORS - 1));
+    console.log(initialColoring);
 
     const ENABLE = {
         BCTR_DGR: true,
@@ -330,17 +320,28 @@ async function main() {
 
     if (ENABLE.BEAM_DGR) {
         console.log('\nRunning Beam search (BEAM) with DGR');
-        beamDGRResults = runSeries('BEAM', generateMap, RUNS, { heuristic: 'DGR', k: BEAM_K, maxIter: MAX_ITER_BEAM, fixedMap: sharedMap });
+        beamDGRResults = runSeries('BEAM', generateMap, RUNS, {
+            heuristic: 'DGR',
+            k: BEAM_K,
+            maxIter: MAX_ITER_BEAM,
+            fixedMap: sharedMap,
+            initialColoring
+        });
         console.log('BEAM (DGR) summary:', summarizeResults(beamDGRResults));
     }
 
     if (ENABLE.BEAM_MY) {
         console.log('\nRunning Beam search (BEAM) with MY');
-        beamMYResults = runSeries('BEAM', generateMap, RUNS, { heuristic: 'MY', k: BEAM_K, maxIter: MAX_ITER_BEAM, fixedMap: sharedMap });
+        beamMYResults = runSeries('BEAM', generateMap, RUNS, {
+            heuristic: 'MY',
+            k: BEAM_K,
+            maxIter: MAX_ITER_BEAM,
+            fixedMap: sharedMap,
+            initialColoring
+        });
         console.log('BEAM (MY) summary:', summarizeResults(beamMYResults));
     }
 
-    // DOT-file
     const allResults = [bctrDGRResults, bctrMYResults, beamDGRResults, beamMYResults].flat();
     const sample = allResults.find(x => x.res.found);
     if (sample) {
@@ -365,8 +366,8 @@ async function main() {
         dot += '}\n';
 
         fs.writeFileSync('graph.dot', dot);
-        console.log('✅ DOT-файл збережено як graph.dot');
-        console.log('👉 Відкрий https://dreampuf.github.io/GraphvizOnline/ і встав вміст із graph.dot, щоб побачити граф.');
+        console.log('DOT-file saved as graph.dot');
+        console.log('Open https://dreampuf.github.io/GraphvizOnline/.');
     }
 
     console.log('\nDONE.');
